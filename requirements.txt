@@ -1,0 +1,12 @@
+Flask==3.0.0
+flask-cors==4.0.0
+supabase==2.24.0
+python-dotenv>=1.2.1
+langchain>=1.0.4
+langchain-openai>=1.0.2
+langgraph>=1.0.2
+numpy>=2.3.4
+openai>=2.7.1
+# torch는 Dockerfile에서 CPU 전용으로 별도 설치
+sentence-transformers>=5.1.2
+
