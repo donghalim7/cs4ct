@@ -20,19 +20,40 @@ def get_recent_cs_messages(supabase: Client, limit: int = 10):
         # assigned_message와 message를 조인하여 최근 메시지 조회
         response = supabase.table("assigned_message").select(
             "msg_id, dept_id, message(msg_id, content)"
-        ).order("msg_id", desc=True).limit(limit).execute()
+        ).order("msg_id", desc=True).limit(limit * 2).execute()  # 중복 제거를 위해 더 많이 가져옴
         
-        return response.data
+        # msg_id 기준으로 중복 제거
+        seen_msg_ids = set()
+        unique_data = []
+        for item in response.data:
+            msg_id = item.get("msg_id")
+            if msg_id not in seen_msg_ids:
+                seen_msg_ids.add(msg_id)
+                unique_data.append(item)
+                if len(unique_data) >= limit:
+                    break
+        
+        return unique_data
     except Exception as e:
         # order 메서드가 지원되지 않는 경우 대체 방법
         try:
             response = supabase.table("assigned_message").select(
                 "msg_id, dept_id, message(msg_id, content)"
-            ).limit(limit * 2).execute()  # 더 많이 가져와서 정렬 후 제한
+            ).limit(limit * 3).execute()  # 중복 제거를 위해 더 많이 가져옴
             # 데이터를 정렬
             if response.data:
                 response.data.sort(key=lambda x: x.get("msg_id", 0), reverse=True)
-                return response.data[:limit]
+                # msg_id 기준으로 중복 제거
+                seen_msg_ids = set()
+                unique_data = []
+                for item in response.data:
+                    msg_id = item.get("msg_id")
+                    if msg_id not in seen_msg_ids:
+                        seen_msg_ids.add(msg_id)
+                        unique_data.append(item)
+                        if len(unique_data) >= limit:
+                            break
+                return unique_data
             return response.data
         except Exception as e2:
             print(f"최근 CS 조회 오류: {e2}")
@@ -71,23 +92,30 @@ def get_department_cs_queue(supabase: Client, dept_id: int):
     """특정 부서에 배정된 최근 CS 큐 조회"""
     try:
         response = supabase.table("assigned_message").select(
-            "msg_id, dept_id, message(msg_id, content)"
-        ).eq("dept_id", dept_id).order("msg_id", desc=True).execute()
+            "msg_id, dept_id, message(msg_id, content, timestamp)"
+        ).eq("dept_id", dept_id).execute()
+        
+        # timestamp 기준으로 정렬 (최신순)
+        if response.data:
+            def get_timestamp(item):
+                msg_data = item.get("message", {})
+                if isinstance(msg_data, list) and msg_data:
+                    msg_data = msg_data[0]
+                timestamp = msg_data.get("timestamp", "") if isinstance(msg_data, dict) else ""
+                if timestamp:
+                    try:
+                        timestamp_str = timestamp.replace('Z', '+00:00')
+                        return datetime.fromisoformat(timestamp_str)
+                    except:
+                        return datetime.min
+                return datetime.min
+            
+            response.data.sort(key=get_timestamp, reverse=True)
         
         return response.data
     except Exception as e:
-        # order 메서드가 지원되지 않는 경우 대체 방법
-        try:
-            response = supabase.table("assigned_message").select(
-                "msg_id, dept_id, message(msg_id, content)"
-            ).eq("dept_id", dept_id).execute()
-            # 데이터를 정렬
-            if response.data:
-                response.data.sort(key=lambda x: x.get("msg_id", 0), reverse=True)
-            return response.data
-        except Exception as e2:
-            print(f"부서 CS 큐 조회 오류: {e2}")
-            return []
+        print(f"부서 CS 큐 조회 오류: {e}")
+        return []
 
 def get_department_stats(supabase: Client, dept_id: int):
     """부서별 통계 조회"""
